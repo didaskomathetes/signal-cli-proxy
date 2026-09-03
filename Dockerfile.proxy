@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1
+
+# ---------------------------------------------------------------------------
+# Build stage: create a reproducible venv with uv from the lock file
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim AS builder
+# uv is a single static binary; pull it from the official image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+WORKDIR /app
+# Copy dependency metadata first so this layer is cached unless deps change
+COPY pyproject.toml uv.lock ./
+RUN uv venv /opt/venv --python 3.12 \
+    && uv sync --frozen --no-dev --python /opt/venv/bin/python
+
+# ---------------------------------------------------------------------------
+# Runtime stage: slim image with the pre-built venv
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim
+# curl is needed for the container healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Bring in the fully-populated virtual environment from the builder
+COPY --from=builder /opt/venv /opt/venv
+ENV VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
+COPY signal-allowlist-proxy.py .
+
+EXPOSE 9921
+
+CMD ["python", "signal-allowlist-proxy.py", "--allowlist", "/etc/signal/allowlist", "--signal-cli", "http://signal-cli:9920", "--port", "9921"]

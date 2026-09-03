@@ -1,0 +1,49 @@
+services:
+  signal-cli:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: signal-cli
+    restart: unless-stopped
+    # NOTE: no ports are published. signal-cli is reachable ONLY from the
+    # allowlist-proxy via the internal Docker network (service name "signal-cli").
+    # This is deliberate: the (untrusted) Hermes agent must never be able to talk
+    # to signal-cli directly and bypass the allowlist. All agent traffic goes
+    # through the proxy on port 9921.
+    volumes:
+      - signal-session:/data/signal-cli
+    # The account is provisioned at runtime via startLink/finishLink (see README),
+    # not via environment variables. The daemon loads all linked accounts from
+    # the persisted /data/signal-cli volume.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9920/api/v1/check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Allowlist proxy - enforces allowlist at the API level
+  # This prevents the Hermes agent from bypassing the allowlist
+  allowlist-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    container_name: signal-allowlist-proxy
+    restart: unless-stopped
+    ports:
+      - "9921:9921"
+    volumes:
+      - ./allowlist/allowlist:/etc/signal/allowlist:ro
+    depends_on:
+      signal-cli:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9921/api/v1/check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  signal-session:
+    driver: local

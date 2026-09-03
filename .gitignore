@@ -1,0 +1,21 @@
+# Secrets / local config (never commit)
+.env
+allowlist/allowlist
+
+# signal-cli session data (account credentials)
+signal-session/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tooling caches
+.ruff_cache/
+.pytest_cache/
+
+# Logs
+*.log

@@ -1,0 +1,44 @@
+[project]
+name = "signal-allowlist-proxy"
+version = "1.0.0"
+description = "Filtering allowlist proxy in front of signal-cli's HTTP JSON-RPC API"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "didaskomathetes" }]
+keywords = ["signal", "signal-cli", "proxy", "allowlist", "security"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff>=0.5",
+    "pytest>=8.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "C4",   # flake8-comprehensions
+]
+ignore = [
+    "SIM300",  # Yoda conditions: `assert actual == expected` is the test convention
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
