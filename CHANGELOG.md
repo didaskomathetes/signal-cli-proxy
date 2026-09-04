@@ -19,8 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `allinone` image: the allowlist can be provided via the
   `SIGNAL_ALLOWED_USERS` environment variable (comma-separated E.164 numbers);
   the entrypoint materializes it into `/etc/signal/allowlist` at startup.
+  `SIGNAL_PROXY_DNS_SERVERS` (comma-separated IPs) is written to
+  `/etc/resolv.conf` at startup, since the image has no network manager.
 - Single multi-target `Dockerfile` (replaces `Dockerfile` + `Dockerfile.proxy`);
   the signal-cli version and checksum are `ARG`s with the current pins as
   defaults — the Dockerfile is the single source of truth for the stack.
+  Base images (JRE, Python, uv) are pinned to exact versions so a release tag
+  always builds against known bases.
 - `CHANGELOG.md` and a Deployment section in the README (Docker / Proxmox LXC /
   building from source).

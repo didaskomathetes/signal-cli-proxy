@@ -242,6 +242,12 @@ image (a PVE "technology preview"). One container, both services, no Docker:
    comma-separated list of E.164 numbers. The entrypoint writes it to
    `/etc/signal/allowlist` at startup; the proxy reloads that file every 30 s,
    so you can also edit the file at runtime.
+
+   Optionally, `SIGNAL_PROXY_DNS_SERVERS` (comma-separated IPs) is written to
+   `/etc/resolv.conf` at startup. The image has no network manager, so this is
+   the self-contained way to give the LXC DNS (e.g.
+   `--env SIGNAL_PROXY_DNS_SERVERS=1.1.1.1,9.9.9.9`); PVE's container
+   "nameserver" option works too.
 3. **Start it** and check the proxy: `curl http://192.168.1.100:9921/health`.
 
 Notes:

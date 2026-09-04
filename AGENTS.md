@@ -88,7 +88,7 @@ The proxy is **fail-closed** by design. When in doubt, block.
 |------|---------|
 | `signal-allowlist-proxy.py` | the proxy (stdlib only) |
 | `Dockerfile` | multi-target: `signal-cli` (daemon, 9920 internal), `proxy` (uv venv, `--no-dev`), `allinone` (both + entrypoint, for LXC) |
-| `entrypoint.sh` | `allinone` entrypoint: allowlist from `$SIGNAL_ALLOWED_USERS`, supervises both services |
+| `entrypoint.sh` | `allinone` entrypoint: allowlist from `$SIGNAL_ALLOWED_USERS`, DNS from `$SIGNAL_PROXY_DNS_SERVERS`, supervises both services |
 | `docker-compose.yml` | wires the two containers (prebuilt GHCR images); only 9921 is published |
 | `allowlist/allowlist.example` | allowlist template (copy to `allowlist/allowlist`) |
 | `tests/` | security-boundary tests (the spec) |

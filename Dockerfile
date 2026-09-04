@@ -8,7 +8,9 @@
 #
 # A release tag pins the whole stack (proxy + signal-cli + JRE). The
 # signal-cli version and checksum below are the single source of truth for
-# the daemon artifact (supply-chain: checksum-verified).
+# the daemon artifact (supply-chain: checksum-verified). Base images are
+# pinned to exact versions (no floating tags) so a release tag always builds
+# against known bases; bump them deliberately.
 
 ARG SIGNAL_CLI_VERSION=0.14.6
 ARG SIGNAL_CLI_SHA256=e90f4faea709b3c0a55909646a2b94289b9779ba9c8fd5c6eaa847d3f67312eb
@@ -16,7 +18,7 @@ ARG SIGNAL_CLI_SHA256=e90f4faea709b3c0a55909646a2b94289b9779ba9c8fd5c6eaa847d3f6
 # ---------------------------------------------------------------------------
 # signal-cli daemon image
 # ---------------------------------------------------------------------------
-FROM eclipse-temurin:25-jre AS signal-cli
+FROM eclipse-temurin:25.0.4_7-jre AS signal-cli
 
 ARG SIGNAL_CLI_VERSION
 ARG SIGNAL_CLI_SHA256
@@ -63,10 +65,10 @@ CMD ["/opt/signal-cli/bin/signal-cli", "--data-dir", "/data/signal-cli", "daemon
 # ---------------------------------------------------------------------------
 # proxy build stage: reproducible venv with uv from the lock file
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim AS proxy-builder
+FROM python:3.12.14-slim-bookworm AS proxy-builder
 
-# uv is a single static binary; pull it from the official image
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# uv is a single static binary; pull it from the official image (pinned)
+COPY --from=ghcr.io/astral-sh/uv:0.12.9 /uv /usr/local/bin/uv
 WORKDIR /app
 # Copy dependency metadata first so this layer is cached unless deps change
 COPY pyproject.toml uv.lock ./
@@ -76,7 +78,7 @@ RUN uv venv /opt/venv --python 3.12 \
 # ---------------------------------------------------------------------------
 # proxy image
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim AS proxy
+FROM python:3.12.14-slim-bookworm AS proxy
 
 # curl is needed for the container healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
