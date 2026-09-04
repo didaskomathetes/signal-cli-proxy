@@ -201,6 +201,19 @@ def _refresh_uuid_map():
             logger.error("Failed to refresh UUID map: %s", e)
 
 
+def uuid_refresh_loop():
+    """Periodically refresh the UUID map and known-account set.
+
+    The initial refresh can fail when the proxy starts before signal-cli's
+    HTTP API is ready (boot/healthcheck race). Without retries,
+    KNOWN_ACCOUNTS would stay empty and every RPC carrying an ``account``
+    param would be blocked (fail closed) until a manual proxy restart.
+    """
+    while True:
+        _refresh_uuid_map()
+        time.sleep(RELOAD_INTERVAL)
+
+
 def resolve_recipient(r):
     """Resolve a recipient (E.164 number or UUID) to a canonical E.164 number.
 
@@ -575,7 +588,7 @@ def main():
 
     threading.Thread(target=reload_loop, daemon=True).start()
     threading.Thread(target=upstream_loop, daemon=True).start()
-    threading.Thread(target=_refresh_uuid_map, daemon=True).start()
+    threading.Thread(target=uuid_refresh_loop, daemon=True).start()
 
     server = ThreadingHTTPServer(("0.0.0.0", args.port), ProxyHandler)
     try:
