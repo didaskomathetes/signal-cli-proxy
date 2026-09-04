@@ -1,0 +1,113 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint (ruff check)
+        run: uv run ruff check .
+
+      - name: Check formatting (ruff format)
+        run: uv run ruff format --check .
+
+      - name: Run tests (pytest)
+        run: uv run pytest
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        run: |
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push signal-cli
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: signal-cli
+          push: true
+          tags: ${{ steps.meta.outputs.image }}/signal-cli:v${{ steps.meta.outputs.version }},${{ steps.meta.outputs.image }}/signal-cli:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push proxy
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: proxy
+          push: true
+          tags: ${{ steps.meta.outputs.image }}/proxy:v${{ steps.meta.outputs.version }},${{ steps.meta.outputs.image }}/proxy:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push allinone
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: allinone
+          push: true
+          tags: ${{ steps.meta.outputs.image }}/allinone:v${{ steps.meta.outputs.version }},${{ steps.meta.outputs.image }}/allinone:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          image="${{ steps.meta.outputs.image }}"
+          version="${{ steps.meta.outputs.version }}"
+          digest="$(docker buildx imagetools inspect "${image}/allinone:v${version}" | awk '/^Manifest:/{print $2}')"
+          {
+            echo "## Images"
+            echo
+            echo "| Image | Tag |"
+            echo "|-------|-----|"
+            echo "| ${image}/signal-cli | v${version} |"
+            echo "| ${image}/proxy | v${version} |"
+            echo "| ${image}/allinone | v${version} |"
+            echo
+            echo "Digest (allinone): \`${digest:-unknown}\`"
+            echo
+            echo "## Deploy"
+            echo
+            echo "- **Docker:** \`docker compose up -d\` (see README)"
+            echo "- **Proxmox LXC (PVE >= 8.1):** create an LXC from the \`allinone\` container image and set the environment variable \`SIGNAL_ALLOWED_USERS\` to your comma-separated allowlist."
+          } > /tmp/release-notes.md
+          gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes-file /tmp/release-notes.md
