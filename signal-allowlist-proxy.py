@@ -210,7 +210,10 @@ def uuid_refresh_loop():
     param would be blocked (fail closed) until a manual proxy restart.
     """
     while True:
-        _refresh_uuid_map()
+        try:
+            _refresh_uuid_map()
+        except Exception:
+            logger.exception("Unexpected error refreshing UUID map; continuing loop")
         time.sleep(RELOAD_INTERVAL)
 
 
