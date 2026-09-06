@@ -240,7 +240,7 @@ image (a PVE "technology preview"). One container, both services, no Docker:
      --cores 1 --memory 1024 \
      --net0 name=eth0,bridge=vmbr0,ip=192.168.1.100/24,gw=192.168.1.1 \
      --unprivileged 1 \
-     --env SIGNAL_ALLOWED_USERS=+15551234567,+4917657908578
+      --env SIGNAL_ALLOWED_USERS=+15551234567,+15551234568
    ```
 
    `--env` sets the runtime environment; `SIGNAL_ALLOWED_USERS` is a
@@ -263,6 +263,8 @@ Notes:
   step 3, substituting `pct exec` for `docker exec`).
 - There is no systemd in the image; the entrypoint supervises both processes
   and restarts either on failure.
+- LXC-from-OCI needs PVE >= 8.1; the `host_managed` networking option needs
+  PVE >= 9.1 (the bridge networking in the example above works on 8.1+).
 
 ### Building from source
 

@@ -30,6 +30,8 @@ if [ -n "$ALLOWLIST_USERS" ]; then
     chown root:sigproxy "$ALLOWLIST_FILE"
     chmod 440 "$ALLOWLIST_FILE"
     echo "entrypoint: allowlist written to $ALLOWLIST_FILE" >&2
+else
+    echo "entrypoint: WARNING: SIGNAL_ALLOWED_USERS is not set; the proxy will start with an EMPTY allowlist (all traffic blocked) until $ALLOWLIST_FILE exists" >&2
 fi
 
 if [ -n "$DNS_SERVERS" ]; then

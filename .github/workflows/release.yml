@@ -109,6 +109,6 @@ jobs:
             echo "## Deploy"
             echo
             echo "- **Docker:** \`docker compose up -d\` (see README)"
-            echo "- **Proxmox LXC (PVE >= 8.1):** create an LXC from the \`allinone\` container image and set the environment variable \`SIGNAL_ALLOWED_USERS\` to your comma-separated allowlist."
+            echo "- **Proxmox LXC (PVE >= 8.1, host_managed networking needs >= 9.1):** create an LXC from the \`allinone\` container image and set the environment variable \`SIGNAL_ALLOWED_USERS\` to your comma-separated allowlist."
           } > /tmp/release-notes.md
           gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes-file /tmp/release-notes.md
