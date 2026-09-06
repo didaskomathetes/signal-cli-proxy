@@ -29,3 +29,79 @@ jobs:
 
       - name: Run tests (pytest)
         run: uv run pytest
+
+  # Runtime smoke test: build all three targets and verify the images actually
+  # start and serve their health endpoints. Catches what lint/unit tests cannot
+  # (e.g. the proxy running as its unprivileged user, entrypoint wiring).
+  smoke-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0
+
+      - name: Build all targets
+        run: |
+          docker build --target signal-cli -t sp-signal-cli .
+          docker build --target proxy    -t sp-proxy .
+          docker build --target allinone -t sp-allinone .
+
+      - name: Smoke test proxy target (unprivileged user)
+        run: |
+          set -euo pipefail
+          # World-readable allowlist: the proxy runs as "sigproxy" (uid 1002)
+          # and must be able to read the bind-mounted file.
+          printf '+15550000000\n+15550000001\n' > /tmp/allowlist
+          chmod 644 /tmp/allowlist
+          docker run -d --name sp-proxy \
+            -p 9921:9921 \
+            -v /tmp/allowlist:/etc/signal/allowlist:ro \
+            sp-proxy
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:9921/api/v1/check >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://localhost:9921/api/v1/check >/dev/null
+          health="$(curl -fsS http://localhost:9921/health)"
+          echo "proxy /health: $health"
+          echo "$health" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'
+          echo "$health" | grep -Eq '"allowlist_size"[[:space:]]*:[[:space:]]*2'
+          # The proxy must run as the unprivileged "sigproxy" user, not root.
+          [ "$(docker exec sp-proxy id -u)" = "1002" ]
+          [ "$(docker exec sp-proxy id -un)" = "sigproxy" ]
+          docker logs sp-proxy || true
+          docker rm -f sp-proxy
+
+      - name: Smoke test allinone target (both services)
+        run: |
+          set -euo pipefail
+          docker run -d --name sp-allinone \
+            -p 9921:9921 \
+            -e SIGNAL_ALLOWED_USERS="+15550000000,+15550000001" \
+            sp-allinone
+          # Proxy (Python) comes up fast; wait for it.
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:9921/api/v1/check >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://localhost:9921/api/v1/check >/dev/null
+          # Daemon (Java) takes longer to start; poll loopback until it is up.
+          for i in $(seq 1 60); do
+            docker exec sp-allinone curl -fsS \
+              http://127.0.0.1:9920/api/v1/check >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec sp-allinone curl -fsS \
+            http://127.0.0.1:9920/api/v1/check >/dev/null
+          # Once the daemon is up, the proxy's upstream SSE connects (poll it).
+          for i in $(seq 1 15); do
+            curl -fsS http://localhost:9921/health \
+              | grep -Eq '"upstream_connected"[[:space:]]*:[[:space:]]*true' && break
+            sleep 2
+          done
+          health="$(curl -fsS http://localhost:9921/health)"
+          echo "allinone /health: $health"
+          echo "$health" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'
+          echo "$health" | grep -Eq '"allowlist_size"[[:space:]]*:[[:space:]]*2'
+          echo "$health" | grep -Eq '"upstream_connected"[[:space:]]*:[[:space:]]*true'
+          docker logs sp-allinone || true
+          docker rm -f sp-allinone

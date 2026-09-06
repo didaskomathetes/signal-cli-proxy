@@ -40,6 +40,8 @@ services:
     ports:
       - "9921:9921"
     volumes:
+      # The proxy runs as "sigproxy" (uid 1002); keep the allowlist readable
+      # by that user (world-readable is fine: chmod 644).
       - ./allowlist/allowlist:/etc/signal/allowlist:ro
     depends_on:
       signal-cli:

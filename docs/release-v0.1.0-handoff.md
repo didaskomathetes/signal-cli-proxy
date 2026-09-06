@@ -31,6 +31,29 @@ has pushed the image.
 - [x] Terraform in `nix-config` (`signal_proxy.tf` + `locals.tf`) rewritten for
       LXC-from-OCI, `fmt` + `validate` green
 
+## Review response (2026-09-06)
+
+External review of the containerization raised 12 risks. Assessment against the
+code: ~7 were already handled (entrypoint uses `127.0.0.1`, signal forwarding +
+restart backoff, allowlist `chmod 440` + not logged, checksum + pinned bases,
+`uv --frozen`, cleaned apt lists). Two were valid and are now fixed:
+
+- [x] **Proxy ran as root** — the standalone `proxy` target had no `USER`. It
+      now creates `sigproxy` (uid 1002) and runs as that user. The allowlist is
+      a bind mount, so it must be readable by uid 1002 (world-readable is fine;
+      documented in README + compose).
+- [x] **No runtime smoke test in CI** — `ci.yml` gains a `smoke-test` job that
+      builds all 3 targets and verifies the images start: proxy serves
+      `/health` as `sigproxy` (uid 1002), allinone brings up both services
+      (daemon on loopback + `upstream_connected: true`).
+- [x] **No `HEALTHCHECK` in images** — added to all 3 targets (compose
+      overrides it; LXC ignores it).
+
+The remaining review points were overstated or wrong for this design (e.g.
+"bind daemon to localhost by default" would break the separate-container
+topology; the cross-distro Python copy was already validated by the smoke test;
+PSF-licensed stdlib has no licensing issue).
+
 ## Remaining (the tag)
 
 1. **Review + merge** `feat/productionized-deployment` → `main` (open a PR).

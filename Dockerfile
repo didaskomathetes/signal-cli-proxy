@@ -60,6 +60,10 @@ EXPOSE 9920
 # (Linking is done via `docker exec` on the internal port, never by the agent.)
 USER signal
 
+# Healthcheck for `docker run` (docker-compose overrides it).
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=60s \
+    CMD curl -f http://localhost:9920/api/v1/check || exit 1
+
 CMD ["/opt/signal-cli/bin/signal-cli", "--data-dir", "/data/signal-cli", "daemon", "--http", "0.0.0.0:9920"]
 
 # ---------------------------------------------------------------------------
@@ -89,10 +93,25 @@ COPY --from=proxy-builder /opt/venv /opt/venv
 ENV VIRTUAL_ENV=/opt/venv \
     PATH="/opt/venv/bin:$PATH"
 
+# Unprivileged user for the proxy (same name/uid as the allinone image). The
+# proxy only reads the code and the allowlist; it never writes, so the
+# world-readable venv is enough (no chown of the venv needed).
+RUN useradd -u 1002 -m -s /usr/sbin/nologin sigproxy
+
 WORKDIR /app
 COPY signal-allowlist-proxy.py .
+RUN chown sigproxy:sigproxy /app/signal-allowlist-proxy.py \
+    && chmod 555 /app/signal-allowlist-proxy.py
+
+# Run unprivileged. The allowlist is a bind mount and must be readable by
+# "sigproxy" (uid 1002) — keep it world-readable (e.g. chmod 644) on the host.
+USER sigproxy
 
 EXPOSE 9921
+
+# Healthcheck for `docker run` (docker-compose overrides it).
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=60s \
+    CMD curl -f http://localhost:9921/api/v1/check || exit 1
 
 CMD ["python", "signal-allowlist-proxy.py", "--allowlist", "/etc/signal/allowlist", "--signal-cli", "http://signal-cli:9920", "--port", "9921"]
 
@@ -129,5 +148,11 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod 755 /entrypoint.sh
 
 EXPOSE 9921
+
+# Healthcheck checks the proxy (the only published surface), overriding the
+# daemon check inherited from the signal-cli stage. Ignored by Proxmox
+# LXC-from-OCI; useful if the image is run with Docker.
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=60s \
+    CMD curl -f http://localhost:9921/api/v1/check || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]

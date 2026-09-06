@@ -219,6 +219,11 @@ Release tags (`v*`) build and push three images to GHCR (nested packages under
 `docker compose up -d` (see Quick Start) pulls the first two. Pin the version
 tag you want in `docker-compose.yml` (or use `:latest`).
 
+The `proxy` image runs as the unprivileged `sigproxy` user (uid 1002). The
+allowlist is a bind mount, so keep it readable by that user — world-readable
+is fine (`chmod 644 allowlist/allowlist`). It contains only E.164 numbers, not
+credentials.
+
 ### Proxmox LXC (LXC-from-OCI, PVE >= 8.1)
 
 The `allinone` image is designed to run as a Proxmox LXC created from an OCI
