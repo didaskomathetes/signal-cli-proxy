@@ -7,11 +7,8 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["config:recommended"],
-  platform: "github",
-  endpoint: "https://api.github.com/",
-  // Self-hosted runs don't receive the repo as an argument; name it explicitly
-  // (autodiscover defaults to false, so without this Renovate finds no repos).
-  repositories: ["didaskomathetes/signal-cli-proxy"],
+  // Global-only options (platform, endpoint, repositories, allowedCommands)
+  // live in .github/renovate-global.json5 — they are rejected here.
 
   // Security posture: no auto-merge, ever. Every update is a reviewed PR.
   automerge: false,

@@ -23,7 +23,9 @@ jobs:
           # GitHub PAT with "repo" scope for this repository, stored as the
           # RENOVATE_TOKEN secret (Settings -> Secrets and variables -> Actions).
           token: ${{ secrets.RENOVATE_TOKEN }}
-          configurationFile: renovate.json5
+          # Global (admin) config: platform/endpoint/repositories/allowedCommands.
+          # The repo-level config (renovate.json5) is auto-discovered separately.
+          configurationFile: .github/renovate-global.json5
           # Custom entrypoint installs `uv` (so pep621 updates can regenerate
           # uv.lock) before handing off to the normal `renovate` command.
           docker-cmd-file: .github/renovate-entrypoint.sh
