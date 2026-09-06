@@ -78,6 +78,15 @@
         executionMode: "branch",
       },
     },
+    // The allinone stage hardcodes python3.12 paths (it copies the 3.12
+    // interpreter, libpython, and stdlib out of the builder), so a Python minor
+    // bump (3.12 -> 3.13+) would break the build. Restrict the base image to the
+    // 3.12.x series; moving to a newer minor is a deliberate manual change that
+    // must also update those COPY lines.
+    {
+      matchPackageNames: ["python"],
+      allowedVersions: "^3\\.12\\.",
+    },
     // Group the remaining minor/patch updates (Actions, base images, the uv
     // image tag, Python dev deps) to limit PR count. Majors stay separate for
     // deliberate review.
