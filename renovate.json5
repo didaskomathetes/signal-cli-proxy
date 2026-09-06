@@ -9,6 +9,9 @@
   extends: ["config:recommended"],
   platform: "github",
   endpoint: "https://api.github.com/",
+  // Self-hosted runs don't receive the repo as an argument; name it explicitly
+  // (autodiscover defaults to false, so without this Renovate finds no repos).
+  repositories: ["didaskomathetes/signal-cli-proxy"],
 
   // Security posture: no auto-merge, ever. Every update is a reviewed PR.
   automerge: false,
