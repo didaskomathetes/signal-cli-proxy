@@ -105,14 +105,16 @@ failure mode, and the fix is on the adapter side, not here.
 
 | Path | Purpose |
 |------|---------|
-| `Dockerfile` | signal-cli daemon image (full distribution, JSON-RPC on 9920) |
-| `Dockerfile.proxy` | uv-managed proxy image (multi-stage, reproducible venv, `--no-dev`) |
+| `Dockerfile` | multi-target image build: `signal-cli` (daemon, JSON-RPC on 9920), `proxy` (uv-managed, reproducible venv, `--no-dev`), `allinone` (both + entrypoint, for LXC) |
+| `entrypoint.sh` | `allinone` entrypoint: materializes the allowlist from `$SIGNAL_ALLOWED_USERS`, supervises both services |
 | `signal-allowlist-proxy.py` | the proxy (Python stdlib only) |
 | `pyproject.toml` / `uv.lock` | proxy dependency management (uv) |
 | `allowlist/allowlist.example` | allowlist template (copy to `allowlist/allowlist`, which is gitignored) |
-| `docker-compose.yml` | wires the two containers together |
+| `docker-compose.yml` | wires the two containers together (prebuilt GHCR images, build fallback) |
 | `tests/` | security-boundary tests (the spec for the proxy) |
 | `.github/workflows/ci.yml` | CI: ruff lint + format + pytest |
+| `.github/workflows/release.yml` | on `v*` tags: build + push GHCR images, create GitHub Release |
+| `CHANGELOG.md` | release history |
 | `AGENTS.md` | instructions for AI coding agents (symlinked as `CLAUDE.md`) |
 
 ## Quick Start
@@ -133,9 +135,12 @@ cp allowlist/allowlist.example allowlist/allowlist
 ### 2. Start the containers
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 docker compose ps          # both should be "healthy"
 ```
+
+This pulls the prebuilt release images from GHCR. To build from source
+instead (e.g. to test an unreleased change), run `docker compose build` first.
 
 ### 3. Link your Signal account
 
@@ -197,6 +202,80 @@ EOF
 | **Linked account** | Main machine | Docker volume `signal-session` (linked at runtime) |
 | **Container restart** | Main machine | `docker compose restart` |
 | **Hermes config** | Agent VM | `~/.hermes/.env` or `hermes gateway setup` |
+
+## Deployment
+
+### Docker (prebuilt images)
+
+Release tags (`v*`) build and push three images to GHCR (nested packages under
+`signal-cli-proxy`):
+
+| Image | Purpose |
+|-------|---------|
+| `ghcr.io/didaskomathetes/signal-cli-proxy/signal-cli:vX.Y.Z` | signal-cli daemon (9920, internal only) |
+| `ghcr.io/didaskomathetes/signal-cli-proxy/proxy:vX.Y.Z` | allowlist proxy (9921) |
+| `ghcr.io/didaskomathetes/signal-cli-proxy/allinone:vX.Y.Z` | both services + entrypoint (for LXC) |
+
+`docker compose up -d` (see Quick Start) pulls the first two. Pin the version
+tag you want in `docker-compose.yml` (or use `:latest`).
+
+The `proxy` image runs as the unprivileged `sigproxy` user (uid 1002). The
+allowlist is a bind mount, so keep it readable by that user — world-readable
+is fine (`chmod 644 allowlist/allowlist`). It contains only E.164 numbers, not
+credentials.
+
+### Proxmox LXC (LXC-from-OCI, PVE >= 8.1)
+
+The `allinone` image is designed to run as a Proxmox LXC created from an OCI
+image (a PVE "technology preview"). One container, both services, no Docker:
+
+1. **Pull the image** — Proxmox GUI: *Datacenter → Storage → (a storage) →
+   Container Templates → Pull from OCI registry*, then enter
+   `ghcr.io/didaskomathetes/signal-cli-proxy/allinone:vX.Y.Z`.
+2. **Create the LXC** from that template (GUI wizard or `pct create`), e.g.:
+
+   ```bash
+   pct create 98 local:oci/<pulled-image> \
+     --hostname signal-proxy \
+     --cores 1 --memory 1024 \
+     --net0 name=eth0,bridge=vmbr0,ip=192.168.1.100/24,gw=192.168.1.1 \
+     --unprivileged 1 \
+      --env SIGNAL_ALLOWED_USERS=+15551234567,+15551234568
+   ```
+
+   `--env` sets the runtime environment; `SIGNAL_ALLOWED_USERS` is a
+   comma-separated list of E.164 numbers. The entrypoint writes it to
+   `/etc/signal/allowlist` at startup; the proxy reloads that file every 30 s,
+   so you can also edit the file at runtime.
+
+   Optionally, `SIGNAL_PROXY_DNS_SERVERS` (comma-separated IPs) is written to
+   `/etc/resolv.conf` at startup. The image has no network manager, so this is
+   the self-contained way to give the LXC DNS (e.g.
+   `--env SIGNAL_PROXY_DNS_SERVERS=1.1.1.1,9.9.9.9`); PVE's container
+   "nameserver" option works too.
+3. **Start it** and check the proxy: `curl http://192.168.1.100:9921/health`.
+
+Notes:
+
+- Only 9921 should be reachable; keep 9920 loopback-only (it is, by default).
+- The account is linked at runtime against the internal 9920 — use
+  `pct exec 98 -- curl ... http://127.0.0.1:9920/api/v1/rpc` (see Quick Start
+  step 3, substituting `pct exec` for `docker exec`).
+- There is no systemd in the image; the entrypoint supervises both processes
+  and restarts either on failure.
+- LXC-from-OCI needs PVE >= 8.1; the `host_managed` networking option needs
+  PVE >= 9.1 (the bridge networking in the example above works on 8.1+).
+
+### Building from source
+
+```bash
+docker build --target signal-cli -t signal-cli:dev .
+docker build --target proxy    -t proxy:dev .
+docker build --target allinone -t allinone:dev .
+```
+
+The signal-cli version and checksum are `ARG`s at the top of the `Dockerfile`
+(defaults are the current pins); override with `--build-arg` if needed.
 
 ## Useful Commands
 

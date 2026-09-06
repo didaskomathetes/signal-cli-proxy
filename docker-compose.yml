@@ -1,8 +1,13 @@
+# Prebuilt images from the release workflow (.github/workflows/release.yml).
+# `docker compose up -d` pulls them; `docker compose build` rebuilds from
+# source (multi-target Dockerfile) and tags them locally instead.
 services:
   signal-cli:
+    image: ghcr.io/didaskomathetes/signal-cli-proxy/signal-cli:v0.1.0
     build:
       context: .
       dockerfile: Dockerfile
+      target: signal-cli
     container_name: signal-cli
     restart: unless-stopped
     # NOTE: no ports are published. signal-cli is reachable ONLY from the
@@ -25,14 +30,18 @@ services:
   # Allowlist proxy - enforces allowlist at the API level
   # This prevents the Hermes agent from bypassing the allowlist
   allowlist-proxy:
+    image: ghcr.io/didaskomathetes/signal-cli-proxy/proxy:v0.1.0
     build:
       context: .
-      dockerfile: Dockerfile.proxy
+      dockerfile: Dockerfile
+      target: proxy
     container_name: signal-allowlist-proxy
     restart: unless-stopped
     ports:
       - "9921:9921"
     volumes:
+      # The proxy runs as "sigproxy" (uid 1002); keep the allowlist readable
+      # by that user (world-readable is fine: chmod 644).
       - ./allowlist/allowlist:/etc/signal/allowlist:ro
     depends_on:
       signal-cli:

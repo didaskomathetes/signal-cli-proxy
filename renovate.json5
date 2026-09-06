@@ -1,0 +1,68 @@
+// Renovate configuration for signal-cli-proxy.
+//
+// Run self-hosted via .github/workflows/renovate.yml (renovatebot/github-action).
+// The proxy is the trusted security boundary, so the posture here is
+// fail-closed and human-reviewed: NOTHING is auto-merged. Renovate only opens
+// PRs; a person reviews and merges each one.
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended"],
+  platform: "github",
+  endpoint: "https://api.github.com/",
+
+  // Security posture: no auto-merge, ever. Every update is a reviewed PR.
+  automerge: false,
+  platformAutomerge: false,
+  automergeType: "none",
+
+  // docker-compose.yml only references this repo's OWN prebuilt images
+  // (ghcr.io/didaskomathetes/signal-cli-proxy/*), which are produced by the
+  // release workflow, not external packages. Disable the manager so Renovate
+  // never tries to "update" them.
+  "docker-compose": { enabled: false },
+
+  // signal-cli release version (the `ARG SIGNAL_CLI_VERSION` in the Dockerfile).
+  // The docker manager only sees FROM/COPY --from images, so this ARG is handled
+  // here. Renovate bumps the version; the postUpgradeTask below recomputes the
+  // release-artifact checksum so the build's `sha256sum -c` check stays green.
+  regexManagers: [
+    {
+      fileMatch: ["^Dockerfile$"],
+      matchStrings: [
+        "ARG SIGNAL_CLI_VERSION=(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)",
+      ],
+      depNameTemplate: "AsamK/signal-cli",
+      datasourceTemplate: "github-releases",
+      versioningTemplate: "semver",
+    },
+  ],
+
+  // After any change to the Dockerfile, recompute the signal-cli checksum.
+  // The task is a no-op when the checksum already matches (e.g. a base-image-only
+  // bump), so it is safe to run on every Dockerfile change.
+  postUpgradeTasks: {
+    commands: ["node scripts/update-signal-cli-checksum.mjs"],
+    fileFilters: ["Dockerfile"],
+    executionMode: "branch",
+  },
+
+  // Keep PR noise low on this small repo.
+  prConcurrentLimit: 2,
+
+  packageRules: [
+    // The security-critical signal-cli bump always gets its own PR (it has the
+    // checksum side-effect and deserves isolated review).
+    {
+      matchDepNames: ["AsamK/signal-cli"],
+      groupName: "signal-cli",
+    },
+    // Group the remaining minor/patch updates (Actions, base images, Python dev
+    // deps) to limit PR count. Majors stay separate for deliberate review.
+    {
+      matchUpdateTypes: ["minor", "patch"],
+      excludeDepNames: ["AsamK/signal-cli"],
+      groupName: "minor and patch updates",
+      groupSlug: "minor-patch",
+    },
+  ],
+}

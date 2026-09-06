@@ -1,0 +1,35 @@
+name: Renovate
+
+on:
+  schedule:
+    # 04:00 UTC, Monday-Friday. Manual runs via "Run workflow".
+    - cron: "0 4 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  renovate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0
+
+      - name: Self-hosted Renovate
+        uses: renovatebot/github-action@v46.2.2
+        with:
+          # GitHub PAT with "repo" scope for this repository, stored as the
+          # RENOVATE_TOKEN secret (Settings -> Secrets and variables -> Actions).
+          token: ${{ secrets.RENOVATE_TOKEN }}
+          configurationFile: renovate.json5
+          # Custom entrypoint installs `uv` (so pep621 updates can regenerate
+          # uv.lock) before handing off to the normal `renovate` command.
+          docker-cmd-file: .github/renovate-entrypoint.sh
+          # Root so the entrypoint can install uv into /usr/local.
+          docker-user: root
+          # Optionally pin the Renovate CLI for reproducibility, e.g.
+          #   renovate-version: 41.150.0
+          # (left unset here so the action uses its default; pin a known-good
+          # version once you've verified one against this config).

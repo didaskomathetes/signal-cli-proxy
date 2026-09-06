@@ -30,11 +30,20 @@ uv run python signal-allowlist-proxy.py \
   --port 9921
 ```
 
-Run the full Docker stack:
+Run the full Docker stack (prebuilt GHCR images; `docker compose build` to
+rebuild from source):
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 docker compose ps        # both services should be "healthy"
+```
+
+Build the images locally (multi-target `Dockerfile`):
+
+```bash
+docker build --target signal-cli -t signal-cli:dev .
+docker build --target proxy    -t proxy:dev .
+docker build --target allinone -t allinone:dev .
 ```
 
 ## Security model (read before touching the proxy)
@@ -78,12 +87,14 @@ The proxy is **fail-closed** by design. When in doubt, block.
 | Path | Purpose |
 |------|---------|
 | `signal-allowlist-proxy.py` | the proxy (stdlib only) |
-| `Dockerfile` | signal-cli daemon image (JSON-RPC on 9920, internal only) |
-| `Dockerfile.proxy` | uv-managed proxy image (multi-stage, `--no-dev`) |
-| `docker-compose.yml` | wires the two containers; only 9921 is published |
+| `Dockerfile` | multi-target: `signal-cli` (daemon, 9920 internal), `proxy` (uv venv, `--no-dev`), `allinone` (both + entrypoint, for LXC) |
+| `entrypoint.sh` | `allinone` entrypoint: allowlist from `$SIGNAL_ALLOWED_USERS`, DNS from `$SIGNAL_PROXY_DNS_SERVERS`, supervises both services |
+| `docker-compose.yml` | wires the two containers (prebuilt GHCR images); only 9921 is published |
 | `allowlist/allowlist.example` | allowlist template (copy to `allowlist/allowlist`) |
 | `tests/` | security-boundary tests (the spec) |
 | `.github/workflows/ci.yml` | CI: ruff + format + pytest |
+| `.github/workflows/release.yml` | on `v*` tags: build + push GHCR images, create GitHub Release |
+| `CHANGELOG.md` | release history |
 
 ## Do not commit
 
