@@ -3,7 +3,7 @@
 # source (multi-target Dockerfile) and tags them locally instead.
 services:
   signal-cli:
-    image: ghcr.io/didaskomathetes/signal-cli-proxy/signal-cli:v0.1.0
+    image: ghcr.io/didaskomathetes/signal-cli-proxy/signal-cli:v0.0.1
     build:
       context: .
       dockerfile: Dockerfile
@@ -30,7 +30,7 @@ services:
   # Allowlist proxy - enforces allowlist at the API level
   # This prevents the Hermes agent from bypassing the allowlist
   allowlist-proxy:
-    image: ghcr.io/didaskomathetes/signal-cli-proxy/proxy:v0.1.0
+    image: ghcr.io/didaskomathetes/signal-cli-proxy/proxy:v0.0.1
     build:
       context: .
       dockerfile: Dockerfile
