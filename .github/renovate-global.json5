@@ -15,7 +15,10 @@
 
   // Security allowlist for postUpgradeTasks commands (global-only). A task
   // command only runs if it matches one of these patterns; an empty list means
-  // no tasks ever run (and the update branch is aborted). This is the only
-  // command our config uses — see postUpgradeTasks in renovate.json5.
-  allowedCommands: ["^node scripts/update-signal-cli-checksum\\.mjs$"],
+  // no tasks ever run (and the update branch is aborted). These are the only
+  // commands our config uses — see postUpgradeTasks in renovate.json5.
+  allowedCommands: [
+    "^node scripts/update-signal-cli-checksum\\.mjs$",
+    "^node scripts/update-uv-checksum\\.mjs$",
+  ],
 }

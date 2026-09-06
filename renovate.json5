@@ -21,10 +21,15 @@
   // never tries to "update" them.
   "docker-compose": { enabled: false },
 
-  // signal-cli release version (the `ARG SIGNAL_CLI_VERSION` in the Dockerfile).
-  // The docker manager only sees FROM/COPY --from images, so this ARG is handled
-  // here. Renovate bumps the version; the postUpgradeTask below recomputes the
-  // release-artifact checksum so the build's `sha256sum -c` check stays green.
+  // Pinned release versions that no built-in manager sees:
+  //  - signal-cli: the `ARG SIGNAL_CLI_VERSION` in the Dockerfile (the docker
+  //    manager only sees FROM/COPY --from images).
+  //  - uv: the `UV_VERSION` in .github/renovate-entrypoint.sh (the binary
+  //    Renovate installs to regenerate uv.lock). Kept in lockstep with the
+  //    Dockerfile's ghcr.io/astral-sh/uv image tag.
+  // For both, Renovate bumps the version and a postUpgradeTask (see packageRules)
+  // recomputes the release-artifact checksum(s) so the supply-chain check stays
+  // green on the PR.
   regexManagers: [
     {
       fileMatch: ["^Dockerfile$"],
@@ -35,29 +40,47 @@
       datasourceTemplate: "github-releases",
       versioningTemplate: "semver",
     },
+    {
+      fileMatch: ["^\\.github/renovate-entrypoint\\.sh$"],
+      matchStrings: [
+        "UV_VERSION=(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)",
+      ],
+      depNameTemplate: "astral-sh/uv",
+      datasourceTemplate: "github-releases",
+      versioningTemplate: "semver",
+    },
   ],
-
-  // After any change to the Dockerfile, recompute the signal-cli checksum.
-  // The task is a no-op when the checksum already matches (e.g. a base-image-only
-  // bump), so it is safe to run on every Dockerfile change.
-  postUpgradeTasks: {
-    commands: ["node scripts/update-signal-cli-checksum.mjs"],
-    fileFilters: ["Dockerfile"],
-    executionMode: "branch",
-  },
 
   // Keep PR noise low on this small repo.
   prConcurrentLimit: 2,
 
   packageRules: [
     // The security-critical signal-cli bump always gets its own PR (it has the
-    // checksum side-effect and deserves isolated review).
+    // checksum side-effect and deserves isolated review). The post-upgrade task
+    // recomputes SIGNAL_CLI_SHA256; it is a no-op when the checksum already
+    // matches (e.g. a base-image-only bump), so it is safe on every run.
     {
       matchDepNames: ["AsamK/signal-cli"],
       groupName: "signal-cli",
+      postUpgradeTasks: {
+        commands: ["node scripts/update-signal-cli-checksum.mjs"],
+        fileFilters: ["Dockerfile"],
+        executionMode: "branch",
+      },
     },
-    // Group the remaining minor/patch updates (Actions, base images, Python dev
-    // deps) to limit PR count. Majors stay separate for deliberate review.
+    // When the entrypoint's UV_VERSION bumps, recompute both per-arch uv
+    // tarball checksums so the entrypoint's sha256 check stays green.
+    {
+      matchDepNames: ["astral-sh/uv"],
+      postUpgradeTasks: {
+        commands: ["node scripts/update-uv-checksum.mjs"],
+        fileFilters: [".github/renovate-entrypoint.sh"],
+        executionMode: "branch",
+      },
+    },
+    // Group the remaining minor/patch updates (Actions, base images, the uv
+    // image tag, Python dev deps) to limit PR count. Majors stay separate for
+    // deliberate review.
     {
       matchUpdateTypes: ["minor", "patch"],
       excludeDepNames: ["AsamK/signal-cli"],
