@@ -85,7 +85,7 @@
     // must also update those COPY lines.
     {
       matchPackageNames: ["python"],
-      allowedVersions: "^3\\.12\\.",
+      allowedVersions: "/^3\\.12\\./",
     },
     // Group the remaining minor/patch updates (Actions, base images, the uv
     // image tag, Python dev deps) to limit PR count. Majors stay separate for
