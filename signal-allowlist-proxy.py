@@ -340,11 +340,21 @@ def _parse_sse_stream(resp, on_event):
         # other fields (id:, retry:) are ignored
 
 
+# signal-cli's daemon can silently stop delivering events to long-lived SSE
+# clients while keeping the TCP connection open (observed 2026-09-07: a
+# ~10h-old connection stopped receiving events while fresh clients worked,
+# and the proxy's upstream_connected flag stayed true, so nothing reconnected
+# and every inbound message was dropped). Reconnect the upstream periodically
+# so a stale connection can never outlive this window.
+UPSTREAM_MAX_AGE_SECONDS = 6 * 60 * 60
+
+
 def upstream_loop():
     """Continuously read signal-cli's /api/v1/events and broadcast filtered events."""
     global UPSTREAM_CONNECTED
     while True:
         conn = None
+        reaper = None
         try:
             conn = http.client.HTTPConnection(UPSTREAM_HOST, UPSTREAM_PORT, timeout=30)
             conn.request("GET", "/api/v1/events")
@@ -353,7 +363,22 @@ def upstream_loop():
                 raise OSError(f"upstream /api/v1/events returned status {resp.status}")
             UPSTREAM_CONNECTED = True
             logger.info("Connected to upstream SSE at %s:%s", UPSTREAM_HOST, UPSTREAM_PORT)
-            _parse_sse_stream(resp, _on_sse_event)
+
+            def _reap(_conn=conn):
+                logger.info(
+                    "Upstream SSE reached max age (%ds); forcing reconnect",
+                    UPSTREAM_MAX_AGE_SECONDS,
+                )
+                with contextlib.suppress(Exception):
+                    _conn.close()
+
+            reaper = threading.Timer(UPSTREAM_MAX_AGE_SECONDS, _reap)
+            reaper.daemon = True
+            reaper.start()
+            try:
+                _parse_sse_stream(resp, _on_sse_event)
+            finally:
+                reaper.cancel()
         except Exception as e:
             logger.warning("Upstream SSE error: %s; reconnecting in 5s", e)
         finally:
