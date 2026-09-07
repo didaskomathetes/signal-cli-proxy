@@ -12,8 +12,8 @@
 # pinned to exact versions (no floating tags) so a release tag always builds
 # against known bases; bump them deliberately.
 
-ARG SIGNAL_CLI_VERSION=0.14.6
-ARG SIGNAL_CLI_SHA256=e90f4faea709b3c0a55909646a2b94289b9779ba9c8fd5c6eaa847d3f67312eb
+ARG SIGNAL_CLI_VERSION=0.14.7
+ARG SIGNAL_CLI_SHA256=0e1eefdf4a2109edf7c899c9d1667167c54ac12c3ec824f27db7c1dac4fa7506
 
 # ---------------------------------------------------------------------------
 # signal-cli daemon image
