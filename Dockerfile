@@ -72,7 +72,7 @@ CMD ["/opt/signal-cli/bin/signal-cli", "--data-dir", "/data/signal-cli", "daemon
 FROM python:3.12.14-slim-bookworm AS proxy-builder
 
 # uv is a single static binary; pull it from the official image (pinned)
-COPY --from=ghcr.io/astral-sh/uv:0.12.9 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.10 /uv /usr/local/bin/uv
 WORKDIR /app
 # Copy dependency metadata first so this layer is cached unless deps change
 COPY pyproject.toml uv.lock ./

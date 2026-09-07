@@ -14,16 +14,16 @@
 # the asset name is uv-<arch>.tar.gz (no version in the filename).
 set -eu
 
-UV_VERSION=0.12.9
+UV_VERSION=0.12.10
 
 case "$(uname -m)" in
 x86_64)
     uv_arch="x86_64-unknown-linux-gnu"
-    uv_sha256="ec7a99cd05e0cd7f80243f135ce1361c76835cb0ee60055d14d20eba8eba1460"
+    uv_sha256="173d95a0c32d18c896c46ba6fafbf3cf9c14ab74b033f81b76c883ef492a976b"
     ;;
 aarch64)
     uv_arch="aarch64-unknown-linux-gnu"
-    uv_sha256="c36fe17937ff6bd16dc42fc13854b5465999fcab2efe0af559381e945e3c6001"
+    uv_sha256="9ff6b9d4665edcdd3a88dcc73cd1eb641754deb927f14e8c62ebfde6bf4f5f5e"
     ;;
 *)
     echo "renovate-entrypoint: unsupported arch $(uname -m)" >&2
