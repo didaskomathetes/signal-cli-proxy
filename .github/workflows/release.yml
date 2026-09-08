@@ -58,7 +58,7 @@ jobs:
           echo "image=ghcr.io/$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
       - name: Build and push signal-cli
-        uses: docker/build-push-action@v6.19.2
+        uses: docker/build-push-action@v7.3.0
         with:
           context: .
           target: signal-cli
@@ -68,7 +68,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push proxy
-        uses: docker/build-push-action@v6.19.2
+        uses: docker/build-push-action@v7.3.0
         with:
           context: .
           target: proxy
@@ -78,7 +78,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push allinone
-        uses: docker/build-push-action@v6.19.2
+        uses: docker/build-push-action@v7.3.0
         with:
           context: .
           target: allinone
