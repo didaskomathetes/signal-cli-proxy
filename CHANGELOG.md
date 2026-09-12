@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `allinone` entrypoint: export `JAVA_HOME` (and prepend the JDK to `PATH`)
+  with a fallback to `/opt/java/openjdk`. PVE's LXC-from-OCI import does not
+  apply the image's `Env` (set by the Temurin base image) to the container, so
+  on Proxmox the signal-cli daemon crash-looped with
+  `JAVA_HOME is not set and no 'java' command could be found in your PATH`
+  unless the variable was set manually on the container.
+
 ## [0.0.1] - 2026-09-06
 
 ### Added

@@ -18,6 +18,13 @@
 # option; this is a self-contained fallback).
 set -u
 
+# The Temurin base image sets JAVA_HOME and a JDK PATH in the OCI image
+# config, but PVE's LXC-from-OCI import does NOT apply the image's Env to the
+# container (only Entrypoint/WorkingDir/User are transferred). Fall back to
+# the known JDK location so the image is self-contained on any runtime.
+export JAVA_HOME="${JAVA_HOME:-/opt/java/openjdk}"
+export PATH="${JAVA_HOME/bin}:${PATH}"
+
 ALLOWLIST_FILE=/etc/signal/allowlist
 ALLOWLIST_USERS="${SIGNAL_ALLOWED_USERS:-}"
 DNS_SERVERS="${SIGNAL_PROXY_DNS_SERVERS:-}"
