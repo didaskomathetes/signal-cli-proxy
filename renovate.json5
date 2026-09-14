@@ -1,100 +1,87 @@
-// Renovate configuration for signal-cli-proxy.
-//
-// Run self-hosted via .github/workflows/renovate.yml (renovatebot/github-action).
-// The proxy is the trusted security boundary, so the posture here is
-// fail-closed and human-reviewed: NOTHING is auto-merged. Renovate only opens
-// PRs; a person reviews and merges each one.
 {
-  $schema: "https://docs.renovatebot.com/renovate-schema.json",
-  extends: ["config:recommended"],
-  // Global-only options (platform, endpoint, repositories, allowedCommands)
-  // live in .github/renovate-global.json5 — they are rejected here.
-
-  // Security posture: no auto-merge, ever. Every update is a reviewed PR.
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'config:recommended',
+  ],
   automerge: false,
   platformAutomerge: false,
-  automergeType: "none",
-
-  // docker-compose.yml only references this repo's OWN prebuilt images
-  // (ghcr.io/didaskomathetes/signal-cli-proxy/*), which are produced by the
-  // release workflow, not external packages. Disable the manager so Renovate
-  // never tries to "update" them.
-  "docker-compose": { enabled: false },
-
-  // Pinned release versions that no built-in manager sees:
-  //  - signal-cli: the `ARG SIGNAL_CLI_VERSION` in the Dockerfile (the docker
-  //    manager only sees FROM/COPY --from images).
-  //  - uv: the `UV_VERSION` in .github/renovate-entrypoint.sh (the binary
-  //    Renovate installs to regenerate uv.lock). Kept in lockstep with the
-  //    Dockerfile's ghcr.io/astral-sh/uv image tag.
-  // For both, Renovate bumps the version and a postUpgradeTask (see packageRules)
-  // recomputes the release-artifact checksum(s) so the supply-chain check stays
-  // green on the PR.
-  regexManagers: [
+  automergeType: 'none',
+  'docker-compose': {
+    enabled: false,
+  },
+  customManagers: [
     {
-      fileMatch: ["^Dockerfile$"],
-      matchStrings: [
-        "ARG SIGNAL_CLI_VERSION=(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)",
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^Dockerfile$/',
       ],
-      depNameTemplate: "AsamK/signal-cli",
-      datasourceTemplate: "github-releases",
-      versioningTemplate: "semver",
+      matchStrings: [
+        'ARG SIGNAL_CLI_VERSION=(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)',
+      ],
+      depNameTemplate: 'AsamK/signal-cli',
+      datasourceTemplate: 'github-releases',
+      versioningTemplate: 'semver',
     },
     {
-      fileMatch: ["^\\.github/renovate-entrypoint\\.sh$"],
-      matchStrings: [
-        "UV_VERSION=(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)",
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^\\.github/renovate-entrypoint\\.sh$/',
       ],
-      depNameTemplate: "astral-sh/uv",
-      datasourceTemplate: "github-releases",
-      versioningTemplate: "semver",
+      matchStrings: [
+        'UV_VERSION=(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)',
+      ],
+      depNameTemplate: 'astral-sh/uv',
+      datasourceTemplate: 'github-releases',
+      versioningTemplate: 'semver',
     },
   ],
-
-  // Keep PR noise low on this small repo.
   prConcurrentLimit: 2,
-
   packageRules: [
-    // The security-critical signal-cli bump always gets its own PR (it has the
-    // checksum side-effect and deserves isolated review). The post-upgrade task
-    // recomputes SIGNAL_CLI_SHA256; it is a no-op when the checksum already
-    // matches (e.g. a base-image-only bump), so it is safe on every run.
     {
-      matchDepNames: ["AsamK/signal-cli"],
-      groupName: "signal-cli",
+      matchDepNames: [
+        'AsamK/signal-cli',
+      ],
+      groupName: 'signal-cli',
       postUpgradeTasks: {
-        commands: ["node scripts/update-signal-cli-checksum.mjs"],
-        fileFilters: ["Dockerfile"],
-        executionMode: "branch",
+        commands: [
+          'node scripts/update-signal-cli-checksum.mjs',
+        ],
+        fileFilters: [
+          'Dockerfile',
+        ],
+        executionMode: 'branch',
       },
     },
-    // When the entrypoint's UV_VERSION bumps, recompute both per-arch uv
-    // tarball checksums so the entrypoint's sha256 check stays green.
     {
-      matchDepNames: ["astral-sh/uv"],
+      matchDepNames: [
+        'astral-sh/uv',
+      ],
       postUpgradeTasks: {
-        commands: ["node scripts/update-uv-checksum.mjs"],
-        fileFilters: [".github/renovate-entrypoint.sh"],
-        executionMode: "branch",
+        commands: [
+          'node scripts/update-uv-checksum.mjs',
+        ],
+        fileFilters: [
+          '.github/renovate-entrypoint.sh',
+        ],
+        executionMode: 'branch',
       },
     },
-    // The allinone stage hardcodes python3.12 paths (it copies the 3.12
-    // interpreter, libpython, and stdlib out of the builder), so a Python minor
-    // bump (3.12 -> 3.13+) would break the build. Restrict the base image to the
-    // 3.12.x series; moving to a newer minor is a deliberate manual change that
-    // must also update those COPY lines.
     {
-      matchPackageNames: ["python"],
-      allowedVersions: "/^3\\.12\\./",
+      matchPackageNames: [
+        'python',
+      ],
+      allowedVersions: '/^3\\.12\\./',
     },
-    // Group the remaining minor/patch updates (Actions, base images, the uv
-    // image tag, Python dev deps) to limit PR count. Majors stay separate for
-    // deliberate review.
     {
-      matchUpdateTypes: ["minor", "patch"],
-      excludeDepNames: ["AsamK/signal-cli"],
-      groupName: "minor and patch updates",
-      groupSlug: "minor-patch",
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+      ],
+      groupName: 'minor and patch updates',
+      groupSlug: 'minor-patch',
+      matchDepNames: [
+        '!AsamK/signal-cli',
+      ],
     },
   ],
 }
