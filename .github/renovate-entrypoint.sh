@@ -14,7 +14,7 @@
 # the asset name is uv-<arch>.tar.gz (no version in the filename).
 set -eu
 
-UV_VERSION=0.12.10
+UV_VERSION=0.12.18
 
 case "$(uname -m)" in
 x86_64)
