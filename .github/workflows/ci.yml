@@ -105,3 +105,38 @@ jobs:
           echo "$health" | grep -Eq '"upstream_connected"[[:space:]]*:[[:space:]]*true'
           docker logs sp-allinone || true
           docker rm -f sp-allinone
+
+      # Regression test (2026-09-13): PVE's LXC-from-OCI import does NOT apply
+      # the image's Env to the container (only Entrypoint/WorkingDir/User are
+      # transferred). The Temurin base sets JAVA_HOME/PATH in the image config,
+      # so the plain `docker run` above passes even if the entrypoint relies on
+      # them. Simulate PVE by overriding those vars with a JDK-less
+      # environment: the entrypoint must fall back to /opt/java/openjdk, or the
+      # daemon crash-loops with "JAVA_HOME is not set".
+      - name: Smoke test allinone with stripped image env (PVE LXC-from-OCI simulation)
+        run: |
+          set -euo pipefail
+          docker run -d --name sp-allinone-noenv \
+            -p 9921:9921 \
+            -e SIGNAL_ALLOWED_USERS="+15550000000,+15550000001" \
+            -e JAVA_HOME= \
+            -e PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            sp-allinone
+          # The Java daemon is the part under test; poll loopback until it is up.
+          for i in $(seq 1 60); do
+            docker exec sp-allinone-noenv curl -fsS \
+              http://127.0.0.1:9920/api/v1/check >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec sp-allinone-noenv curl -fsS \
+            http://127.0.0.1:9920/api/v1/check >/dev/null
+          # Once the daemon is up, the proxy's upstream SSE connects (poll it).
+          for i in $(seq 1 15); do
+            curl -fsS http://localhost:9921/health \
+              | grep -Eq '"upstream_connected"[[:space:]]*:[[:space:]]*true' && break
+            sleep 2
+          done
+          curl -fsS http://localhost:9921/health \
+            | grep -Eq '"upstream_connected"[[:space:]]*:[[:space:]]*true'
+          docker logs sp-allinone-noenv || true
+          docker rm -f sp-allinone-noenv
