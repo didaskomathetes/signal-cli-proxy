@@ -19,11 +19,11 @@ UV_VERSION=0.12.18
 case "$(uname -m)" in
 x86_64)
     uv_arch="x86_64-unknown-linux-gnu"
-    uv_sha256="173d95a0c32d18c896c46ba6fafbf3cf9c14ab74b033f81b76c883ef492a976b"
+    uv_sha256="89eadd7c76fc063887959510d5ba0ab1264dfd5f1143b925ddb73021a40acf16"
     ;;
 aarch64)
     uv_arch="aarch64-unknown-linux-gnu"
-    uv_sha256="9ff6b9d4665edcdd3a88dcc73cd1eb641754deb927f14e8c62ebfde6bf4f5f5e"
+    uv_sha256="afb6291f3f0a6b4521fc67b947822506c41dde5b60d2189dd8f3695b2ac8c9e7"
     ;;
 *)
     echo "renovate-entrypoint: unsupported arch $(uname -m)" >&2

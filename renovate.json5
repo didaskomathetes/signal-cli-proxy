@@ -63,7 +63,15 @@
         fileFilters: [
           '.github/renovate-entrypoint.sh',
         ],
-        executionMode: 'branch',
+        // 'update' (not 'branch'): in a grouped branch the branch-level
+        // postUpgradeTasks are taken from the FIRST upgrade (sorted by
+        // depName), so 'branch' mode silently skips this task whenever a
+        // dep like astral-sh/setup-uv sorts earlier in the group (this
+        // happened in PR #13, leaving stale checksums behind). 'update'
+        // mode runs the task for every upgrade that defines it; the script
+        // is idempotent, so the duplicate run for the uses-with entry is a
+        // no-op.
+        executionMode: 'update',
       },
     },
     {
