@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `allinone` image: a root-run watchdog (`/watchdog.sh`, supervised by the
+  entrypoint) that probes the signal-cli daemon's JSON-RPC endpoint every
+  30 s and kills it after 3 consecutive failed probes (max 3 recoveries per
+  hour, with post-recovery verification). This addresses the 2026-10-03
+  incident where the daemon hung (process alive, but RPC and SSE wedged) and
+  the exit-only supervise loop never restarted it — Signal was down ~32
+  minutes until a manual LXC restart.
+- Proxy `/health` endpoint: new `upstream_healthy` field, a true RPC-level
+  health signal driven by the periodic `listAccounts`/`listContacts` refresh.
+  `upstream_connected` (SSE socket state only) is kept for backwards
+  compatibility; during the 2026-10-03 hang the SSE kept reconnecting while
+  the RPC was wedged, so `upstream_connected` alone was misleading.
+
 ### Fixed
 
 - `allinone` entrypoint: export `JAVA_HOME` (and prepend the JDK to `PATH`)

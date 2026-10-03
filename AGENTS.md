@@ -88,7 +88,8 @@ The proxy is **fail-closed** by design. When in doubt, block.
 |------|---------|
 | `signal-allowlist-proxy.py` | the proxy (stdlib only) |
 | `Dockerfile` | multi-target: `signal-cli` (daemon, 9920 internal), `proxy` (uv venv, `--no-dev`), `allinone` (both + entrypoint, for LXC) |
-| `entrypoint.sh` | `allinone` entrypoint: allowlist from `$SIGNAL_ALLOWED_USERS`, DNS from `$SIGNAL_PROXY_DNS_SERVERS`, supervises both services |
+| `entrypoint.sh` | `allinone` entrypoint: allowlist from `$SIGNAL_ALLOWED_USERS`, DNS from `$SIGNAL_PROXY_DNS_SERVERS`, supervises all three processes |
+| `watchdog.sh` | `allinone` watchdog (root): probes the daemon's JSON-RPC endpoint every 30 s, kills it after 3 consecutive failed probes (max 3/hour) so the supervise loop restarts a *hung* daemon |
 | `docker-compose.yml` | wires the two containers (prebuilt GHCR images); only 9921 is published |
 | `allowlist/allowlist.example` | allowlist template (copy to `allowlist/allowlist`) |
 | `tests/` | security-boundary tests (the spec) |
