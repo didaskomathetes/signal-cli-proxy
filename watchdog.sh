@@ -50,6 +50,9 @@ log() {
 
 # Probe the daemon's JSON-RPC endpoint. Success = HTTP 200 with a JSON-RPC
 # "result" field. Any curl failure, non-200 status, or timeout is a failure.
+# The grep requires the colon after the key (the JSON-RPC field), so a 200
+# body that merely CONTAINS the word "result" (e.g. inside an error message)
+# does not pass.
 probe() {
     local body_file http_code
     body_file=$(mktemp) || return 1
@@ -61,30 +64,43 @@ probe() {
         return 1
     }
     local ok=1
-    if [ "$http_code" = "200" ] && grep -q '"result"' "$body_file"; then
+    if [ "$http_code" = "200" ] && grep -Eq '"result"[[:space:]]*:' "$body_file"; then
         ok=0
     fi
     rm -f "$body_file"
     return "$ok"
 }
 
-# Kill the hung daemon. Scoped to uid "signal" so it can never match the
-# proxy (uid sigproxy), the root supervise loops, or this script (root).
-# SIGTERM first, escalating to SIGKILL if the process is still alive after a
+# Kill the hung daemon. Scoped to uid "signal" WITHOUT a -f pattern: the
+# daemon is the only long-running process owned by that user (the entrypoint
+# runs exactly one service per user — signal, sigproxy — plus this script as
+# root), so every process of the uid is the daemon. Pattern-less scoping
+# also removes the silent coupling to the entrypoint's daemon cmdline
+# ('signal-cli ... daemon') that the previous -f pattern had. SIGTERM first,
+# escalating to SIGKILL if any process of the uid is still alive after a
 # short grace period: a wedged JVM may be unable to act on SIGTERM (the whole
 # point is that it is unresponsive), and the supervise loop only restarts the
 # daemon once the process actually exits.
+# Returns 0 if a kill matched at least one process, 1 if nothing matched.
 kill_daemon() {
-    pkill -TERM -u signal -f 'signal-cli.*daemon'
-    sleep 3
-    if pgrep -u signal -f 'signal-cli.*daemon' >/dev/null 2>&1; then
-        log "daemon still alive after SIGTERM; sending SIGKILL"
-        pkill -KILL -u signal -f 'signal-cli.*daemon'
+    if ! pkill -TERM -u signal; then
+        # No process owned by uid "signal" matched. Expected if the daemon
+        # exited on its own between the probe and the kill (the supervise
+        # loop restarts it); a persistent no-match means the uid scope no
+        # longer covers the daemon, which would otherwise be silent.
+        log "WARNING: no daemon process matched (pkill -TERM -u signal)"
+        return 1
     fi
+    sleep 3
+    if pgrep -u signal >/dev/null 2>&1; then
+        log "daemon still alive after SIGTERM; sending SIGKILL"
+        pkill -KILL -u signal
+    fi
+    return 0
 }
 
-# True if fewer than MAX_RECOVERIES kills happened in the last COOLDOWN_WINDOW
-# seconds. Prunes stale timestamps and records a new kill.
+# True if fewer than MAX_RECOVERIES kills were recorded in the last
+# COOLDOWN_WINDOW seconds. Prunes stale timestamps but does NOT record.
 recovery_allowed() {
     local now cutoff i
     local old_times=("${RECOVERY_TIMES[@]:-}")
@@ -94,11 +110,15 @@ recovery_allowed() {
     for i in "${old_times[@]:-}"; do
         [ -n "$i" ] && [ "$i" -ge "$cutoff" ] && RECOVERY_TIMES+=("$i")
     done
-    if [ "${#RECOVERY_TIMES[@]}" -ge "$MAX_RECOVERIES" ]; then
-        return 1
-    fi
-    RECOVERY_TIMES+=("$now")
-    return 0
+    [ "${#RECOVERY_TIMES[@]}" -lt "$MAX_RECOVERIES" ]
+}
+
+# Record a kill that actually matched a process. A no-op kill (daemon
+# already exited on its own) is deliberately NOT recorded, so a
+# crash-looping daemon cannot exhaust the budget on kills that matched
+# nothing.
+record_recovery() {
+    RECOVERY_TIMES+=("$(date +%s)")
 }
 
 # Wait for the daemon to come back after a kill: re-probe every
@@ -148,9 +168,13 @@ while true; do
 
     if recovery_allowed; then
         log "daemon unresponsive after $FAIL_THRESHOLD consecutive failed probes; killing (supervise loop will restart it)"
-        kill_daemon
-        FAIL_COUNT=0
-        wait_for_recovery
+        if kill_daemon; then
+            record_recovery
+            FAIL_COUNT=0
+            wait_for_recovery
+        fi
+        # No-match: the daemon already exited on its own; the supervise loop
+        # restarts it and the next probe cycle verifies the recovery.
         continue
     fi
 
