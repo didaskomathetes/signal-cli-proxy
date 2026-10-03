@@ -294,6 +294,8 @@ docker logs -f signal-cli                           # signal-cli logs
 curl http://localhost:9921/api/v1/check             # proxy (published)
 curl http://localhost:9921/health                   # proxy status JSON
 #   upstream_healthy: true RPC-level health (daemon answering listAccounts);
+#     lags ~30-60 s after a hang (a wedged refresh only flips it once its RPC
+#     call times out) — a signal, not a fast trip wire
 #   upstream_connected: SSE socket state only (kept for compatibility)
 docker exec signal-cli curl -fsS -o /dev/null -w "%{http_code}\n" \
   http://localhost:9920/api/v1/check                # signal-cli (internal)

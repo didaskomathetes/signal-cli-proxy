@@ -74,6 +74,7 @@ jobs:
       - name: Smoke test allinone target (both services)
         run: |
           set -euo pipefail
+          start_ts=$(date +%s)
           docker run -d --name sp-allinone \
             -p 9921:9921 \
             -e SIGNAL_ALLOWED_USERS="+15550000000,+15550000001" \
@@ -115,6 +116,15 @@ jobs:
           # Exact match: the supervise wrapper's cmdline also contains
           # /watchdog.sh, but only the watchdog itself is "/bin/bash /watchdog.sh".
           docker exec sp-allinone pgrep -xf '/bin/bash /watchdog.sh' >/dev/null
+          # The watchdog probes every 30 s and kills after 3 consecutive failed
+          # probes (~90 s). A healthy daemon must SURVIVE: if the probe were
+          # broken (always failing), the watchdog would have killed the daemon
+          # by now. Wait until we are safely past that window, then assert the
+          # daemon still answers. (The probe's request shape is also pinned by
+          # the unit tests in tests/test_watchdog.py.)
+          while [ "$(( $(date +%s) - start_ts ))" -lt 95 ]; do sleep 2; done
+          docker exec sp-allinone curl -fsS \
+            http://127.0.0.1:9920/api/v1/check >/dev/null
           docker logs sp-allinone || true
           docker rm -f sp-allinone
 

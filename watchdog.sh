@@ -33,7 +33,11 @@ set -u
 # Constants (hardcoded on purpose — see the note above about env vars)
 # ---------------------------------------------------------------------------
 RPC_URL="http://127.0.0.1:9920/api/v1/rpc"
-RPC_BODY='{"jsonrpc":"2.0","id":1,"method":"listAccounts"}'
+# Include an explicit (empty) "params" object to match the proxy's _rpc_call
+# request shape. listAccounts takes no required params today, but the probe is
+# the decision to KILL the daemon: if signal-cli ever required the params
+# field, a param-less probe would false-negative and kill a healthy daemon.
+RPC_BODY='{"jsonrpc":"2.0","id":1,"method":"listAccounts","params":{}}'
 PROBE_TIMEOUT=5        # curl -m: a wedged daemon must not block the probe
 PROBE_INTERVAL=30      # seconds between probes in the normal loop
 FAIL_THRESHOLD=3       # consecutive failed probes before acting (~90 s)
@@ -144,44 +148,49 @@ RECOVERY_TIMES=()
 FAIL_COUNT=0
 COOLDOWN_LOGGED=0
 
-trap 'log "received termination signal; exiting"; exit 0' TERM INT
+# Run the watchdog loop only when executed directly (e.g. `/watchdog.sh`), not
+# when sourced — so tests can load the constants and functions (probe,
+# kill_daemon, recovery_allowed, ...) without starting the infinite loop.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    trap 'log "received termination signal; exiting"; exit 0' TERM INT
 
-log "started (probe every ${PROBE_INTERVAL}s, act after ${FAIL_THRESHOLD} failures, max ${MAX_RECOVERIES} recoveries per ${COOLDOWN_WINDOW}s)"
+    log "started (probe every ${PROBE_INTERVAL}s, act after ${FAIL_THRESHOLD} failures, max ${MAX_RECOVERIES} recoveries per ${COOLDOWN_WINDOW}s)"
 
-while true; do
-    sleep "$PROBE_INTERVAL"
-    if probe; then
-        if [ "$FAIL_COUNT" -gt 0 ]; then
-            log "probe OK again after $FAIL_COUNT failed probe(s)"
-        fi
-        FAIL_COUNT=0
-        COOLDOWN_LOGGED=0
-        continue
-    fi
-
-    FAIL_COUNT=$((FAIL_COUNT + 1))
-    log "probe failed ($FAIL_COUNT/$FAIL_THRESHOLD)"
-
-    if [ "$FAIL_COUNT" -lt "$FAIL_THRESHOLD" ]; then
-        continue
-    fi
-
-    if recovery_allowed; then
-        log "daemon unresponsive after $FAIL_THRESHOLD consecutive failed probes; killing (supervise loop will restart it)"
-        if kill_daemon; then
-            record_recovery
+    while true; do
+        sleep "$PROBE_INTERVAL"
+        if probe; then
+            if [ "$FAIL_COUNT" -gt 0 ]; then
+                log "probe OK again after $FAIL_COUNT failed probe(s)"
+            fi
             FAIL_COUNT=0
-            wait_for_recovery
+            COOLDOWN_LOGGED=0
+            continue
         fi
-        # No-match: the daemon already exited on its own; the supervise loop
-        # restarts it and the next probe cycle verifies the recovery.
-        continue
-    fi
 
-    if [ "$COOLDOWN_LOGGED" -eq 0 ]; then
-        log "cooldown exhausted: ${MAX_RECOVERIES} recoveries in the last ${COOLDOWN_WINDOW}s; manual intervention needed"
-        COOLDOWN_LOGGED=1
-    fi
-    # Keep probing (and counting) so a recovery is logged if the daemon
-    # comes back on its own; do not kill again until the window slides.
-done
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        log "probe failed ($FAIL_COUNT/$FAIL_THRESHOLD)"
+
+        if [ "$FAIL_COUNT" -lt "$FAIL_THRESHOLD" ]; then
+            continue
+        fi
+
+        if recovery_allowed; then
+            log "daemon unresponsive after $FAIL_THRESHOLD consecutive failed probes; killing (supervise loop will restart it)"
+            if kill_daemon; then
+                record_recovery
+                FAIL_COUNT=0
+                wait_for_recovery
+            fi
+            # No-match: the daemon already exited on its own; the supervise
+            # loop restarts it and the next probe cycle verifies the recovery.
+            continue
+        fi
+
+        if [ "$COOLDOWN_LOGGED" -eq 0 ]; then
+            log "cooldown exhausted: ${MAX_RECOVERIES} recoveries in the last ${COOLDOWN_WINDOW}s; manual intervention needed"
+            COOLDOWN_LOGGED=1
+        fi
+        # Keep probing (and counting) so a recovery is logged if the daemon
+        # comes back on its own; do not kill again until the window slides.
+    done
+fi

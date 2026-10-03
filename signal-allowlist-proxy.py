@@ -106,6 +106,12 @@ UPSTREAM_CONNECTED = False
 # health signal: the SSE socket can stay connected (or keep reconnecting)
 # while the daemon's RPC is wedged — the 2026-10-03 hang — in which case
 # UPSTREAM_CONNECTED alone would misleadingly report the upstream as fine.
+#
+# Staleness note: on a hang this lags. A wedged _rpc_call blocks until its
+# timeout before the refresh's except flips this to False, so /health can
+# still report upstream_healthy=true for up to ~RELOAD_INTERVAL + the RPC
+# timeout (~30-60 s) after the daemon wedges. Treat it as a health *signal*,
+# not a fast trip wire — the in-container watchdog is the recovery mechanism.
 UPSTREAM_RPC_HEALTHY = False
 
 
@@ -414,7 +420,10 @@ def health_payload():
 
     ``upstream_connected`` reflects only the SSE socket state and is kept for
     backwards compatibility; ``upstream_healthy`` is the true upstream health
-    signal (see UPSTREAM_RPC_HEALTHY).
+    signal (see UPSTREAM_RPC_HEALTHY). Note that ``upstream_healthy`` lags by
+    up to ~RELOAD_INTERVAL + the RPC timeout (~30-60 s) after the daemon
+    wedges, because a wedged refresh only flips it once its RPC call times
+    out — it is a signal, not a fast trip wire.
     """
     return {
         "status": "ok",
