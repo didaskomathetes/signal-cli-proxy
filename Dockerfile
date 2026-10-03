@@ -143,9 +143,15 @@ RUN chown sigproxy:sigproxy /opt/signal-proxy/signal-allowlist-proxy.py \
     && chmod 555 /opt/signal-proxy/signal-allowlist-proxy.py
 
 # Entrypoint: materializes the allowlist from $SIGNAL_ALLOWED_USERS (if set)
-# and supervises both services (restart on failure, clean shutdown).
+# and supervises all three processes (restart on failure, clean shutdown).
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod 755 /entrypoint.sh
+
+# Watchdog: probes the daemon's JSON-RPC endpoint and kills it if it hangs
+# (process alive but unresponsive), so the supervise loop restarts it. Runs
+# as root (supervised by the entrypoint, like the other services).
+COPY watchdog.sh /watchdog.sh
+RUN chmod 755 /watchdog.sh
 
 EXPOSE 9921
 

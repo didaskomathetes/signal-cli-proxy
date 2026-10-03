@@ -1,12 +1,18 @@
 #!/bin/bash
 # All-in-one entrypoint for the signal-proxy LXC image (Proxmox LXC-from-OCI).
 #
-# Runs both services of the stack, each as its own unprivileged user, and
-# restarts either on failure (mirrors systemd's Restart=on-failure +
-# RestartSec=5):
+# Runs all three processes of the stack, each restarted on failure (mirrors
+# systemd's Restart=on-failure + RestartSec=5):
 #
-#   signal-cli  daemon, JSON-RPC on 127.0.0.1:9920 (loopback only)
-#   proxy       allowlist proxy on 0.0.0.0:9921 (the only published surface)
+#   signal-cli  daemon, JSON-RPC on 127.0.0.1:9920 (loopback only),
+#               unprivileged user "signal" (uid 1001)
+#   proxy       allowlist proxy on 0.0.0.0:9921 (the only published surface),
+#               unprivileged user "sigproxy" (uid 1002)
+#   watchdog    root: probes the daemon's JSON-RPC endpoint every 30 s and
+#               kills it after 3 consecutive failed probes, so a HUNG daemon
+#               (process alive but unresponsive — the 2026-10-03 incident) is
+#               restarted by the signal-cli loop above. Max 3 recoveries per
+#               hour; logs to /var/log/watchdog.log.
 #
 # If $SIGNAL_ALLOWED_USERS is set (comma-separated E.164 numbers), it is
 # materialized into /etc/signal/allowlist at startup. The proxy reloads the
@@ -51,13 +57,19 @@ if [ -n "$DNS_SERVERS" ]; then
 fi
 
 # Restart loop for one service, run as its own user in its own session
-# (process group), so shutdown can stop the whole tree cleanly.
+# (process group), so shutdown can stop the whole tree cleanly. user="root"
+# runs the command as root (the watchdog needs root to kill the uid-1001
+# daemon; everything else is unprivileged).
 supervise() {
     local name="$1" user="$2"
     shift 2
     while true; do
         echo "entrypoint: starting $name" >&2
-        setpriv --reuid="$user" --regid="$user" --init-groups "$@" >>"/var/log/$name.log" 2>&1
+        if [ "$user" = "root" ]; then
+            "$@" >>"/var/log/$name.log" 2>&1
+        else
+            setpriv --reuid="$user" --regid="$user" --init-groups "$@" >>"/var/log/$name.log" 2>&1
+        fi
         echo "entrypoint: $name exited; restarting in 5 s" >&2
         sleep 5
     done
@@ -70,10 +82,16 @@ CLI_PID=$!
 setsid bash -c 'supervise proxy sigproxy /usr/local/bin/python3.12 /opt/signal-proxy/signal-allowlist-proxy.py --allowlist /etc/signal/allowlist --signal-cli http://127.0.0.1:9920 --port 9921' &
 PROXY_PID=$!
 
-# Forward shutdown signals to both service process groups, then exit.
+# The watchdog runs as root (no setpriv): it must be able to kill the
+# uid-1001 daemon. It is itself supervised, so if it ever exits it is
+# restarted like the other services.
+setsid bash -c 'supervise watchdog root /watchdog.sh' &
+WATCHDOG_PID=$!
+
+# Forward shutdown signals to all service process groups, then exit.
 shutdown() {
     echo "entrypoint: shutting down" >&2
-    kill -TERM -- "-$CLI_PID" "-$PROXY_PID" 2>/dev/null
+    kill -TERM -- "-$CLI_PID" "-$PROXY_PID" "-$WATCHDOG_PID" 2>/dev/null
     wait
     exit 0
 }

@@ -106,7 +106,8 @@ failure mode, and the fix is on the adapter side, not here.
 | Path | Purpose |
 |------|---------|
 | `Dockerfile` | multi-target image build: `signal-cli` (daemon, JSON-RPC on 9920), `proxy` (uv-managed, reproducible venv, `--no-dev`), `allinone` (both + entrypoint, for LXC) |
-| `entrypoint.sh` | `allinone` entrypoint: materializes the allowlist from `$SIGNAL_ALLOWED_USERS`, supervises both services |
+| `entrypoint.sh` | `allinone` entrypoint: materializes the allowlist from `$SIGNAL_ALLOWED_USERS`, supervises all three processes |
+| `watchdog.sh` | `allinone` watchdog (root): probes the daemon's JSON-RPC endpoint and kills it if it hangs, so the supervise loop restarts it |
 | `signal-allowlist-proxy.py` | the proxy (Python stdlib only) |
 | `pyproject.toml` / `uv.lock` | proxy dependency management (uv) |
 | `allowlist/allowlist.example` | allowlist template (copy to `allowlist/allowlist`, which is gitignored) |
@@ -261,8 +262,13 @@ Notes:
 - The account is linked at runtime against the internal 9920 — use
   `pct exec 98 -- curl ... http://127.0.0.1:9920/api/v1/rpc` (see Quick Start
   step 3, substituting `pct exec` for `docker exec`).
-- There is no systemd in the image; the entrypoint supervises both processes
-  and restarts either on failure.
+- There is no systemd in the image; the entrypoint supervises all three
+  processes (signal-cli, proxy, watchdog) and restarts any of them on failure.
+  The watchdog additionally catches a *hung* daemon (process alive but
+  unresponsive): it probes the daemon's JSON-RPC endpoint every 30 s and kills
+  it after 3 consecutive failed probes (max 3 recoveries per hour), so the
+  supervise loop restarts it. Its log is at `/var/log/watchdog.log` inside the
+  container.
 - LXC-from-OCI needs PVE >= 8.1; the `host_managed` networking option needs
   PVE >= 9.1 (the bridge networking in the example above works on 8.1+).
 
@@ -287,6 +293,10 @@ docker logs -f signal-cli                           # signal-cli logs
 # Health checks
 curl http://localhost:9921/api/v1/check             # proxy (published)
 curl http://localhost:9921/health                   # proxy status JSON
+#   upstream_healthy: true RPC-level health (daemon answering listAccounts);
+#     lags ~30-60 s after a hang (a wedged refresh only flips it once its RPC
+#     call times out) — a signal, not a fast trip wire
+#   upstream_connected: SSE socket state only (kept for compatibility)
 docker exec signal-cli curl -fsS -o /dev/null -w "%{http_code}\n" \
   http://localhost:9920/api/v1/check                # signal-cli (internal)
 

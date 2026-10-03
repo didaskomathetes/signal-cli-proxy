@@ -26,7 +26,10 @@ Endpoints (drop-in compatible with signal-cli's HTTP API):
   GET  /api/v1/check   -> 200 (health)
   POST /api/v1/rpc     -> JSON-RPC (default-deny method allowlist)
   GET  /api/v1/events  -> SSE stream of allowlisted incoming messages
-  GET  /health         -> proxy status JSON
+  GET  /health         -> proxy status JSON (includes upstream_healthy, a
+                          true RPC-level health signal: the SSE socket can
+                          stay connected while the daemon's RPC is wedged,
+                          as in the 2026-10-03 hang)
 """
 
 import argparse
@@ -96,6 +99,20 @@ ALLOWLIST = set()
 
 # Whether the upstream SSE connection is currently up (for /health).
 UPSTREAM_CONNECTED = False
+
+# Whether the upstream RPC endpoint is currently answering (for /health, as
+# ``upstream_healthy``). Set by the periodic UUID-map refresh, which calls
+# listAccounts/listContacts every RELOAD_INTERVAL seconds. This is the true
+# health signal: the SSE socket can stay connected (or keep reconnecting)
+# while the daemon's RPC is wedged — the 2026-10-03 hang — in which case
+# UPSTREAM_CONNECTED alone would misleadingly report the upstream as fine.
+#
+# Staleness note: on a hang this lags. A wedged _rpc_call blocks until its
+# timeout before the refresh's except flips this to False, so /health can
+# still report upstream_healthy=true for up to ~RELOAD_INTERVAL + the RPC
+# timeout (~30-60 s) after the daemon wedges. Treat it as a health *signal*,
+# not a fast trip wire — the in-container watchdog is the recovery mechanism.
+UPSTREAM_RPC_HEALTHY = False
 
 
 def load_allowlist_file(path):
@@ -168,8 +185,12 @@ def _rpc_call(method, params):
 
 
 def _refresh_uuid_map():
-    """Rebuild the UUID->number map and known-account set from signal-cli."""
-    global UUID_TO_NUMBER, KNOWN_ACCOUNTS
+    """Rebuild the UUID->number map and known-account set from signal-cli.
+
+    Also updates UPSTREAM_RPC_HEALTHY: a successful refresh proves the
+    daemon's RPC endpoint is answering, a failure proves it is not.
+    """
+    global UUID_TO_NUMBER, KNOWN_ACCOUNTS, UPSTREAM_RPC_HEALTHY
     with UUID_REFRESH_LOCK:
         try:
             accounts = _rpc_call("listAccounts", {})
@@ -194,10 +215,12 @@ def _refresh_uuid_map():
             with UUID_CACHE_LOCK:
                 UUID_TO_NUMBER = new_map
                 KNOWN_ACCOUNTS = new_accounts
+            UPSTREAM_RPC_HEALTHY = True
             logger.info(
                 "UUID map refreshed: %d entries, %d account(s)", len(new_map), len(new_accounts)
             )
         except Exception as e:
+            UPSTREAM_RPC_HEALTHY = False
             logger.error("Failed to refresh UUID map: %s", e)
 
 
@@ -390,6 +413,28 @@ def upstream_loop():
 
 
 # ---------------------------------------------------------------------------
+# /health
+# ---------------------------------------------------------------------------
+def health_payload():
+    """Build the /health response body.
+
+    ``upstream_connected`` reflects only the SSE socket state and is kept for
+    backwards compatibility; ``upstream_healthy`` is the true upstream health
+    signal (see UPSTREAM_RPC_HEALTHY). Note that ``upstream_healthy`` lags by
+    up to ~RELOAD_INTERVAL + the RPC timeout (~30-60 s) after the daemon
+    wedges, because a wedged refresh only flips it once its RPC call times
+    out — it is a signal, not a fast trip wire.
+    """
+    return {
+        "status": "ok",
+        "allowlist_size": len(ALLOWLIST),
+        "clients": BROADCASTER.client_count,
+        "upstream_connected": UPSTREAM_CONNECTED,
+        "upstream_healthy": UPSTREAM_RPC_HEALTHY,
+    }
+
+
+# ---------------------------------------------------------------------------
 # HTTP request handler (drop-in for signal-cli's HTTP API)
 # ---------------------------------------------------------------------------
 class ProxyHandler(BaseHTTPRequestHandler):
@@ -407,15 +452,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
         elif path == "/api/v1/events":
             self._handle_events()
         elif path == "/health":
-            self._send_json(
-                200,
-                {
-                    "status": "ok",
-                    "allowlist_size": len(ALLOWLIST),
-                    "clients": BROADCASTER.client_count,
-                    "upstream_connected": UPSTREAM_CONNECTED,
-                },
-            )
+            self._send_json(200, health_payload())
         else:
             self._send_json(404, {"error": "not found"})
 

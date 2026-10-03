@@ -195,3 +195,61 @@ def test_extract_sender_bad_json(proxy):
     sender, is_group = proxy._extract_sender("not json")
     assert sender == ""
     assert is_group is False
+
+
+# --- /health -----------------------------------------------------------------
+
+
+def test_health_payload_fields(proxy):
+    payload = proxy.health_payload()
+    assert payload["status"] == "ok"
+    assert payload["allowlist_size"] == len(ALLOWED)
+    assert payload["clients"] == 0
+    # Both upstream signals are present; connected (SSE) and healthy (RPC)
+    # are distinct fields, with the old name kept for compatibility.
+    assert payload["upstream_connected"] is False
+    assert payload["upstream_healthy"] is False
+
+
+def test_upstream_healthy_tracks_rpc_refresh(proxy, monkeypatch):
+    # A successful RPC refresh marks the upstream healthy...
+    def rpc_ok(method, params):
+        return []
+
+    monkeypatch.setattr(proxy, "_rpc_call", rpc_ok)
+    proxy._refresh_uuid_map()
+    assert proxy.UPSTREAM_RPC_HEALTHY is True
+    assert proxy.health_payload()["upstream_healthy"] is True
+
+    # ...and a failed one (the 2026-10-03 hang: RPC wedged) marks it unhealthy.
+    def rpc_wedged(method, params):
+        raise OSError("signal-cli RPC wedged")
+
+    monkeypatch.setattr(proxy, "_rpc_call", rpc_wedged)
+    proxy._refresh_uuid_map()
+    assert proxy.UPSTREAM_RPC_HEALTHY is False
+    assert proxy.health_payload()["upstream_healthy"] is False
+
+
+def test_upstream_healthy_fail_closed_and_clears_on_wedge(proxy, monkeypatch):
+    # Fail-closed: before any refresh has succeeded, the flag is False (the
+    # proxy must not claim a healthy upstream it has not verified).
+    assert proxy.UPSTREAM_RPC_HEALTHY is False
+
+    # Once healthy, a wedged refresh (the 2026-10-03 hang) must clear it back to
+    # False — this is the "eventually False" side of the documented staleness
+    # lag: a wedged _rpc_call blocks until its timeout, then the refresh's
+    # except flips the flag. It is never left stuck at True.
+    def rpc_ok(method, params):
+        return []
+
+    monkeypatch.setattr(proxy, "_rpc_call", rpc_ok)
+    proxy._refresh_uuid_map()
+    assert proxy.UPSTREAM_RPC_HEALTHY is True
+
+    def rpc_wedged(method, params):
+        raise OSError("signal-cli RPC wedged")
+
+    monkeypatch.setattr(proxy, "_rpc_call", rpc_wedged)
+    proxy._refresh_uuid_map()
+    assert proxy.UPSTREAM_RPC_HEALTHY is False
